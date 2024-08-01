@@ -6,9 +6,8 @@ Contact Ringer is an Android application that ensures important calls and SMS me
 
 - **Contact Selection**: Choose specific contacts whose calls and SMS messages should always ring through.
 - **Override Silent Mode**: Automatically turn on the ringer volume for selected contacts, even if the phone is in silent or vibrate mode.
-- **Automatic Reset**: After the call or SMS, the phone's audio settings revert to the previous state.
+- **Automatic Reset**: After the call or SMS, the phone's audio settings revert to the original state.
 - **Custom Ringtones and Volume**: Set custom ringtones and volume levels for selected contacts.
-- **Battery Optimization Handling**: Requests necessary permissions to bypass battery optimizations, ensuring functionality.
 
 ## Components
 
@@ -20,4 +19,4 @@ Contact Ringer is an Android application that ensures important calls and SMS me
 
 ## Permissions
 
-This app requires various permissions to read contacts, call logs, and SMS, modify audio settings, and bypass battery optimizations to function effectively.
+This app requires various permissions to read contacts, call logs, and SMS, modify audio settings, and bypass battery optimizations to function.
