@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Base application theme -->
+    <style name="Theme.ContactRinger" parent="Theme.MaterialComponents.NoActionBar">
+        <!-- Make the window background transparent -->
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <!-- Ensure status bar content is visible -->
+    </style>
+
+</resources>
