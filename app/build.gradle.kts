@@ -4,15 +4,15 @@ plugins {
 }
 
 android {
-    namespace = "com.example.contactringer"
+    namespace = "com.fbb.contactringer"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.contactringer"
+        applicationId = "com.fbb.contactringer"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 9
+        versionName = "1.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -47,11 +47,12 @@ android {
 }
 
 dependencies {
-
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
-    implementation(platform(libs.androidx.compose.bom))
+    implementation("androidx.compose.ui:ui:1.7.1")
+    implementation("androidx.compose.foundation:foundation:1.5.0")
+    implementation(platform("androidx.compose:compose-bom:2024.09.01"))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
@@ -65,3 +66,4 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 }
+
