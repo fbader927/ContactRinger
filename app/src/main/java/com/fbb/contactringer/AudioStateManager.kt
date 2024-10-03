@@ -5,10 +5,7 @@ import android.content.Context
 import android.media.AudioManager
 import android.media.RingtoneManager
 import android.net.Uri
-import android.os.Build
-import android.os.Handler
-import android.os.Looper
-import android.provider.Settings
+import android.os.*
 import android.util.Log
 
 object AudioStateManager {
@@ -23,6 +20,7 @@ object AudioStateManager {
 
     private var resettingAudioState: Boolean = false
     private var originalState: AudioState? = null
+    private var vibrator: Vibrator? = null
 
     fun scheduleResetAudioState(context: Context, delayMillis: Long = 3000) {
         Handler(Looper.getMainLooper()).postDelayed({
@@ -34,6 +32,7 @@ object AudioStateManager {
         if (resettingAudioState) return
 
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         if (originalState == null) {
             originalState = AudioState(
@@ -41,7 +40,7 @@ object AudioStateManager {
                 ringVolume = audioManager.getStreamVolume(AudioManager.STREAM_RING),
                 notificationVolume = audioManager.getStreamVolume(AudioManager.STREAM_NOTIFICATION),
                 systemVolume = audioManager.getStreamVolume(AudioManager.STREAM_SYSTEM),
-                dndMode = Settings.Global.getInt(context.contentResolver, "zen_mode", 0),
+                dndMode = notificationManager.currentInterruptionFilter,
                 currentRingtone = RingtoneManager.getActualDefaultRingtoneUri(
                     context,
                     RingtoneManager.TYPE_RINGTONE
@@ -52,7 +51,17 @@ object AudioStateManager {
 
         if (contact != null) {
             if (contact.onlyVibrate) {
-                audioManager.ringerMode = AudioManager.RINGER_MODE_VIBRATE
+                audioManager.ringerMode = AudioManager.RINGER_MODE_NORMAL
+                audioManager.setStreamVolume(AudioManager.STREAM_RING, 0, 0)
+                Log.d("AudioStateManager", "Ringer mode set to NORMAL with zero volume for contact ${contact.name}")
+
+                vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                val vibrationEffect = VibrationEffect.createWaveform(
+                    longArrayOf(0, 1500, 3000),
+                    0
+                )
+                vibrator?.vibrate(vibrationEffect)
+                Log.d("AudioStateManager", "Vibration started for contact ${contact.name}")
             } else {
                 audioManager.ringerMode = AudioManager.RINGER_MODE_NORMAL
                 val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_RING)
@@ -63,6 +72,11 @@ object AudioStateManager {
                     AudioManager.FLAG_SHOW_UI or AudioManager.FLAG_PLAY_SOUND
                 )
                 Log.d("AudioStateManager", "Volume set to $contactVolume for contact ${contact.name}")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    if (notificationManager.isNotificationPolicyAccessGranted) {
+                        notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
+                    }
+                }
             }
 
             contact.ringtone?.let {
@@ -80,7 +94,6 @@ object AudioStateManager {
         }
     }
 
-
     fun resetAudioState(context: Context) {
         if (resettingAudioState || originalState == null) {
             Log.d("AudioStateManager", "No original state to reset or resetting already in progress")
@@ -89,9 +102,14 @@ object AudioStateManager {
 
         resettingAudioState = true
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         originalState?.let { state ->
             try {
+                vibrator?.cancel()
+                vibrator = null
+                Log.d("AudioStateManager", "Vibration stopped")
+
                 audioManager.setStreamVolume(AudioManager.STREAM_RING, state.ringVolume, 0)
                 audioManager.setStreamVolume(AudioManager.STREAM_NOTIFICATION, state.notificationVolume, 0)
                 audioManager.setStreamVolume(AudioManager.STREAM_SYSTEM, state.systemVolume, 0)
@@ -99,9 +117,12 @@ object AudioStateManager {
                 audioManager.ringerMode = state.ringerMode
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                     if (notificationManager.isNotificationPolicyAccessGranted) {
-                        notificationManager.setInterruptionFilter(state.dndMode)
+                        if (state.dndMode != NotificationManager.INTERRUPTION_FILTER_UNKNOWN) {
+                            notificationManager.setInterruptionFilter(state.dndMode)
+                        } else {
+                            notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
+                        }
                     }
                 }
 
@@ -123,6 +144,4 @@ object AudioStateManager {
             }
         }
     }
-
-
 }

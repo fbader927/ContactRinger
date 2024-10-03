@@ -76,23 +76,27 @@ class SMSNotif : NotificationListenerService() {
             val phoneNumber = personUri?.let {
                 val parsedUri = Uri.parse(it)
                 if (parsedUri.scheme == "tel") parsedUri.schemeSpecificPart else null
-            } ?: personName?.let { normalizePhoneNumber(it) }
+            }
+
+            var contact: Contact? = null
 
             if (phoneNumber != null) {
-                val contact = ContactsManager.getContactByNumber(this, phoneNumber)
+                contact = ContactsManager.getContactByNumber(this, phoneNumber)
+            }
 
-                contact?.let {
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        AudioStateManager.overrideSilentMode(this, contact)
-                        adjustVolumeForContact(contact, this)
-                        Log.d("SMSNotification", "Call from selected contact: ${contact.name}")
-                        activeCallNotificationKey = sbn.key
-                    }, 1000)
-                } ?: run {
-                    Log.d("SMSNotification", "Call from unknown contact. Skipping volume adjustment.")
-                }
-            } else {
-                Log.d("SMSNotification", "Phone number could not be extracted. Skipping.")
+            if (contact == null && personName != null) {
+                contact = contactsManager.getSelectedContacts().find { it.name.equals(personName, ignoreCase = true) }
+            }
+
+            contact?.let {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    AudioStateManager.overrideSilentMode(this, contact)
+                    adjustVolumeForContact(contact, this)
+                    Log.d("SMSNotification", "Call from selected contact: ${contact.name}")
+                    activeCallNotificationKey = sbn.key
+                }, 1000)
+            } ?: run {
+                Log.d("SMSNotification", "Call from unknown contact. Skipping volume adjustment.")
             }
         } else {
             Log.d("SMSNotification", "No Person object found in notification. Skipping.")
@@ -138,6 +142,10 @@ class SMSNotif : NotificationListenerService() {
     }
 
     private fun adjustVolumeForContact(contact: Contact, context: Context) {
+        if (contact.onlyVibrate) {
+            Log.d("SMSNotification", "Contact ${contact.name} is set to Only Vibrate. Skipping volume adjustment.")
+            return
+        }
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_RING)
         val contactVolume = (maxVolume * contact.volume / 100f).toInt()
@@ -146,6 +154,10 @@ class SMSNotif : NotificationListenerService() {
     }
 
     private fun playNotificationSound(context: Context, contact: Contact) {
+        if (contact.onlyVibrate) {
+            Log.d("SMSNotification", "Contact ${contact.name} is set to Only Vibrate. Skipping notification sound.")
+            return
+        }
         try {
             val notificationUri = contact.ringtone?.let { Uri.parse(it) }
                 ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
