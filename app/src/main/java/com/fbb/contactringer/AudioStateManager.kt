@@ -94,6 +94,52 @@ object AudioStateManager {
         }
     }
 
+    fun overrideNotificationVolumeForContact(context: Context, contact: Contact?) {
+        if (resettingAudioState) return
+
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        if (originalState == null) {
+            originalState = AudioState(
+                ringerMode = audioManager.ringerMode,
+                ringVolume = audioManager.getStreamVolume(AudioManager.STREAM_RING),
+                notificationVolume = audioManager.getStreamVolume(AudioManager.STREAM_NOTIFICATION),
+                systemVolume = audioManager.getStreamVolume(AudioManager.STREAM_SYSTEM),
+                dndMode = notificationManager.currentInterruptionFilter,
+                currentRingtone = RingtoneManager.getActualDefaultRingtoneUri(
+                    context,
+                    RingtoneManager.TYPE_RINGTONE
+                )
+            )
+            Log.d("AudioStateManager", "Original state saved: $originalState")
+        }
+
+        if (contact != null) {
+            if (contact.onlyVibrate) {
+                audioManager.setStreamVolume(AudioManager.STREAM_NOTIFICATION, 0, 0)
+                Log.d("AudioStateManager", "Notification volume set to 0 for onlyVibrate contact ${contact.name}")
+
+                vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                val vibrationEffect = VibrationEffect.createWaveform(
+                    longArrayOf(0, 500, 500),
+                    -1
+                )
+                vibrator?.vibrate(vibrationEffect)
+                Log.d("AudioStateManager", "Vibration started for contact ${contact.name}")
+            } else {
+                val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_NOTIFICATION)
+                val contactVolume = (maxVolume * contact.volume / 100f).toInt()
+                audioManager.setStreamVolume(
+                    AudioManager.STREAM_NOTIFICATION,
+                    contactVolume,
+                    AudioManager.FLAG_SHOW_UI or AudioManager.FLAG_PLAY_SOUND
+                )
+                Log.d("AudioStateManager", "Notification volume set to $contactVolume for contact ${contact.name}")
+            }
+        }
+    }
+
     fun resetAudioState(context: Context) {
         if (resettingAudioState || originalState == null) {
             Log.d("AudioStateManager", "No original state to reset or resetting already in progress")

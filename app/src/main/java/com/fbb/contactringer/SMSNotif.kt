@@ -3,7 +3,7 @@ package com.fbb.contactringer
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioManager
-import android.media.MediaPlayer
+import android.media.Ringtone
 import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Handler
@@ -19,19 +19,29 @@ class SMSNotif : NotificationListenerService() {
     private val PROCESSING_COOLDOWN = 2000
     private val SMS_RING_DURATION = 3000L
     private var activeCallNotificationKey: String? = null
+    private val processedNotificationKeys = mutableSetOf<String>()
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         sbn?.let {
             val packageName = sbn.packageName
-            Log.d("SMSNotification", "Notification from package: $packageName")
+            val notificationKey = sbn.key
+            Log.d("SMSNotification", "Notification from package: $packageName, key: $notificationKey")
+
+            if (processedNotificationKeys.contains(notificationKey)) {
+                Log.d("SMSNotification", "Notification already processed: $notificationKey")
+                return
+            }
 
             when (packageName) {
                 Telephony.Sms.getDefaultSmsPackage(this) -> {
                     Log.d("SMSNotification", "Notification is from the default SMS app")
+                    // Cancel the notification to prevent default sound from playing
+                    cancelNotification(sbn.key)
                     val extras = sbn.notification.extras
                     val smsSender = extras.getString("android.title")
                     smsSender?.let { sender ->
                         handleIncomingSMS(sender, this)
+                        processedNotificationKeys.add(notificationKey)
                     } ?: run {
                         Log.d("SMSNotification", "SMS sender is null, skipping handling")
                     }
@@ -39,6 +49,7 @@ class SMSNotif : NotificationListenerService() {
                 "com.samsung.android.incallui" -> {
                     Log.d("SMSNotification", "Incoming call detected via notification")
                     handleIncomingCallNotification(sbn)
+                    processedNotificationKeys.add(notificationKey)
                 }
                 else -> {
                     Log.d("SMSNotification", "Notification is not from the default SMS app or call UI")
@@ -52,7 +63,10 @@ class SMSNotif : NotificationListenerService() {
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         sbn?.let {
             val packageName = sbn.packageName
-            Log.d("SMSNotification", "Notification removed from package: $packageName")
+            val notificationKey = sbn.key
+            Log.d("SMSNotification", "Notification removed from package: $packageName, key: $notificationKey")
+
+            processedNotificationKeys.remove(notificationKey)
 
             if (packageName == "com.samsung.android.incallui" && sbn.key == activeCallNotificationKey) {
                 Log.d("SMSNotification", "Call notification removed. Resetting volume.")
@@ -91,10 +105,9 @@ class SMSNotif : NotificationListenerService() {
             contact?.let {
                 Handler(Looper.getMainLooper()).postDelayed({
                     AudioStateManager.overrideSilentMode(this, contact)
-                    adjustVolumeForContact(contact, this)
                     Log.d("SMSNotification", "Call from selected contact: ${contact.name}")
                     activeCallNotificationKey = sbn.key
-                }, 1000)
+                }, 0)
             } ?: run {
                 Log.d("SMSNotification", "Call from unknown contact. Skipping volume adjustment.")
             }
@@ -122,15 +135,14 @@ class SMSNotif : NotificationListenerService() {
 
             if (contact != null) {
                 Log.d("SMSNotification", "Sender is in selected contacts: ${contact.name}")
-                Log.d("SMSNotification", "Adjusting ringer volume for contact: ${contact.name}")
 
-                AudioStateManager.overrideSilentMode(context, contact)
-                adjustVolumeForContact(contact, context)
+                // Adjust the notification volume
+                AudioStateManager.overrideNotificationVolumeForContact(context, contact)
 
-                Handler(Looper.getMainLooper()).postDelayed({
-                    playNotificationSound(context, contact)
-                }, 100)
+                // Play the notification sound immediately
+                playNotificationSound(context, contact)
 
+                // Schedule resetting the audio state
                 AudioStateManager.scheduleResetAudioState(context, SMS_RING_DURATION)
                 lastProcessedTime = currentTime
             } else {
@@ -139,18 +151,6 @@ class SMSNotif : NotificationListenerService() {
         } else {
             Log.d("SMSNotification", "Skipping processing due to recent activity")
         }
-    }
-
-    private fun adjustVolumeForContact(contact: Contact, context: Context) {
-        if (contact.onlyVibrate) {
-            Log.d("SMSNotification", "Contact ${contact.name} is set to Only Vibrate. Skipping volume adjustment.")
-            return
-        }
-        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_RING)
-        val contactVolume = (maxVolume * contact.volume / 100f).toInt()
-        audioManager.setStreamVolume(AudioManager.STREAM_RING, contactVolume, 0)
-        Log.d("SMSNotification", "Adjusted volume to: $contactVolume for contact: ${contact.name}")
     }
 
     private fun playNotificationSound(context: Context, contact: Contact) {
@@ -162,25 +162,23 @@ class SMSNotif : NotificationListenerService() {
             val notificationUri = contact.ringtone?.let { Uri.parse(it) }
                 ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
 
-            if (notificationUri != null && context.contentResolver.getType(notificationUri) != null) {
-                val mediaPlayer = MediaPlayer()
-                mediaPlayer.setDataSource(context, notificationUri)
-                mediaPlayer.setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_NOTIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
-                mediaPlayer.prepare()
-                mediaPlayer.start()
-
-                mediaPlayer.setOnCompletionListener { mp ->
-                    mp.release()
-                }
-
+            val ringtone = RingtoneManager.getRingtone(context, notificationUri)
+            if (ringtone != null) {
+                ringtone.audioAttributes = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+                ringtone.play()
                 Log.d("SMSNotification", "Playing notification sound for contact: ${contact.name}")
+
+                // Schedule stopping the ringtone after a certain duration
+                Handler(Looper.getMainLooper()).postDelayed({
+                    if (ringtone.isPlaying) {
+                        ringtone.stop()
+                    }
+                }, SMS_RING_DURATION)
             } else {
-                Log.e("SMSNotification", "Invalid URI or no access to notification sound for contact: ${contact.name}")
+                Log.e("SMSNotification", "Unable to get ringtone for contact: ${contact.name}")
             }
         } catch (e: Exception) {
             Log.e("SMSNotification", "Error playing notification sound: ${e.message}")
