@@ -454,7 +454,7 @@ fun ContactPickerDialog(
 
     if (hasReadContactsPermission) {
         LaunchedEffect(Unit) {
-            contacts = contactsManager.fetchContacts()
+            contacts = contactsManager.fetchContacts().sortedBy { it.name.lowercase() }
         }
 
         AlertDialog(
